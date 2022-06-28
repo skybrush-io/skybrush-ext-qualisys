@@ -1,0 +1,7 @@
+{
+  "EXTENSIONS": {
+    "qualisys": {
+	    "connection": "tcp://192.168.1.28:22223"
+	  }
+  }
+}

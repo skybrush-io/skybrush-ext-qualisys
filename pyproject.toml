@@ -1,0 +1,38 @@
+[tool.poetry]
+
+name = "skybrush-ext-qualisys"
+version = "1.0.0"
+description = "Qualisys mocap support for Skybrush Server"
+authors = ["Tamas Nepusz <ntamas@gmail.com>"]
+license = "UNLICENSED"
+packages = [
+  # Change this to the name of the folder in src/ containing your extension
+  { include = "skybrush_ext_qualisys", from = "src" }
+]
+
+[[tool.poetry.source]]
+name = "fury"
+url = "https://pypi.fury.io/skybrush/"
+secondary = true
+
+[tool.poetry.dependencies]
+python = "^3.8"
+qtm = "^2.1.1"
+
+[tool.poetry.dev-dependencies]
+flockwave-server = { git = "https://github.com/skybrush-io/skybrush-server", branch = "main" }
+
+[tool.poetry.plugins]
+
+[tool.poetry.plugins."skybrush.server.ext"]
+# Change the key below to the name of the extension that you want to use in
+# configuration files, and the value to the name of the Python module that
+# contains the extension code
+qualisys = "skybrush_ext_qualisys"
+
+[tool.poetry.scripts]
+skybrushd = "flockwave.server.launcher:start"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
