@@ -1,4 +1,5 @@
 from contextlib import aclosing, ExitStack
+from math import isnan
 from trio import sleep
 from typing import List, TYPE_CHECKING
 from xml.etree.ElementTree import fromstring as parse_xml
@@ -12,11 +13,18 @@ from skybrush_ext_qualisys.protocol import QualisysRTError
 
 if TYPE_CHECKING:
     from flockwave.server.app import SkybrushServer
+    from flockwave.server.ext.motion_capture import MotionCaptureFrame
 
 __all__ = ("QualisysMocapExtension",)
 
 DEFAULT_CONNECTION_URL = "tcp://localhost:22223"
 """Default connection URL to the Qualisys Track Manager."""
+
+
+TRACKING_LOST = None, None
+"""Special entry that denotes a rigid body for which the tracking has been
+lost temporarily.
+"""
 
 
 class QualisysMocapExtension(Extension):
@@ -47,7 +55,7 @@ class QualisysMocapExtension(Extension):
                     connection,
                     "qualisys",
                     "Qualisys QTM-RT connection",
-                    purpose=ConnectionPurpose.other,  # type: ignore
+                    purpose=ConnectionPurpose.mocap,  # type: ignore
                 )
             )
 
@@ -101,11 +109,60 @@ class QualisysMocapExtension(Extension):
             if not bodies:
                 await sleep(1)
 
-        self.log.info(f"Found {len(bodies)} rigid bodies")
+        # TODO(ntamas): we should check periodically whether GetParameters still
+        # returns the same number of rigid bodies, and update if the setup
+        # changes
+
+        try:
+            self.log.info(f"Found {len(bodies)} rigid bodies, streaming frames")
+            await self._stream_frames_from_qtm_connection(conn, bodies)
+        finally:
+            self.log.info("Streaming terminated.")
+
+    async def _stream_frames_from_qtm_connection(
+        self, conn: QTMConnection, bodies: List[str]
+    ) -> None:
+        assert self.app is not None
+        assert self.log is not None
+
+        # Grab the signal we need to post frames, as well as the frame factory
+        # from the motion_capture extension
+        create_frame = self.app.import_api("motion_capture").create_frame
+        enqueue_frame = self.app.import_api("motion_capture").enqueue_frame
 
         async with aclosing(conn.stream_frames("AllFrames", "6D")) as stream:  # type: ignore
             async for packet in stream:
                 _, component_6d = packet.get_6d()
-                for index, (pos, _) in enumerate(component_6d):
-                    name = bodies[index]
-                    self.log.info(f"{name}: {pos.x:.2f}, {pos.y:.2f}, {pos.z:.2f}")
+                if len(component_6d) != len(bodies):
+                    # Rigid body count seems to have changed. This is okay, we
+                    # just terminate the connection with a warning, and the
+                    # connection supervisor will open it again as soon as
+                    # possible
+                    self.log.warn(
+                        f"Expected {len(bodies)} rigid bodies in frame, "
+                        f"got {len(component_6d)}, terminating stream"
+                    )
+                    return
+
+                frame: MotionCaptureFrame = create_frame()
+                for name, (pos, _) in zip(bodies, component_6d):
+                    if any(isnan(x) for x in pos):
+                        pos = None
+                    if pos:
+                        # TODO(ntamas): configure units!
+                        position, attitude = (
+                            pos.x / 1000.0,
+                            pos.y / 1000.0,
+                            pos.z / 1000.0,
+                        ), None
+                    else:
+                        position, attitude = TRACKING_LOST
+
+                    # TODO(ntamas): this is temporary
+                    frame.add_item(
+                        name.replace("E7E7E7E7", "").replace("01", "11"),
+                        position,
+                        attitude,
+                    )
+
+                enqueue_frame(frame)

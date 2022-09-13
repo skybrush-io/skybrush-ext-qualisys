@@ -3,7 +3,7 @@ from .extension import QualisysMocapExtension as construct
 __all__ = ("construct",)
 
 description = "Connection to Qualisys motion capture systems"
-dependencies = ()
+dependencies = ("motion_capture",)
 tags = ("experimental",)
 schema = {
     "properties": {
