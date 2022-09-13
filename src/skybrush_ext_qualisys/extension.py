@@ -158,11 +158,6 @@ class QualisysMocapExtension(Extension):
                     else:
                         position, attitude = TRACKING_LOST
 
-                    # TODO(ntamas): this is temporary
-                    frame.add_item(
-                        name.replace("E7E7E7E7", "").replace("01", "11"),
-                        position,
-                        attitude,
-                    )
+                    frame.add_item(name, position, attitude)
 
                 enqueue_frame(frame)
